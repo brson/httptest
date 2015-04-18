@@ -5,3 +5,5 @@ authors = ["Brian Anderson <banderson@mozilla.com>"]
 
 [dependencies]
 iron = "*"
+serde = "*"
+serde_macros = "*"
