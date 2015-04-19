@@ -162,6 +162,138 @@ brian@brian-ThinkPad-X1-Carbon-3rd:~⟫ curl http://localhost:3000
 
 Blam! We're sending JSON. Time for another break.
 
+# 3. Routes
+
+Next I want to POST some JSON, but before I do that I need a proper
+URL to post to, so I guess I need to learn how to set up routes.
+
+I look at the Iron [docs](http://ironframework.io/doc/iron/) and don't
+see anything obvious in the main text, but there's a crate called
+[router](http://ironframework.io/doc/router/index.html) that might be
+interesting.
+
+The module docs are "`Router` provides fast and flexible routing for
+Iron", but not much else. How do I use a `Router`?! After I lot of
+sleuthing I discover [an
+example](https://github.com/iron/router/blob/master/examples/simple.rs).
+OK, let's try to adapt that to our evolving experiment.
+
+I add `router = "*"` to my `Cargo.toml` `[dependencies]` section,
+and begin writing. The following is what I come up with
+before getting stuck reading the POST data.
+
+```rust
+#![feature(custom_derive, plugin)]
+#![plugin(serde_macros)]
+
+extern crate iron;
+extern crate router;
+extern crate serde;
+
+use iron::prelude::*;
+use iron::status;
+use router::Router;
+use serde::json;
+
+#[derive(Serialize, Deserialize)]
+struct Greeting {
+    msg: String
+}
+
+fn main() {
+    let mut router = Router::new();
+
+    router.get("/", hello_world);
+    router.post("/set", set_greeting);
+
+    fn hello_world(_: &mut Request) -> IronResult<Response> {
+        let greeting = Greeting { msg: "Hello, World".to_string() };
+        let payload = json::to_string(&greeting).unwrap();
+        Ok(Response::with((status::Ok, payload)))
+    }
+
+    // Receive a message by POST and play it back.
+    fn set_greeting(_: &mut Request) -> IronResult<Response> {
+        let payload = unimplemented!(); // How to I get the POST body as string.
+        let request: Greeting = json::from_str(payload).unwrap();
+        let greeting = Greeting { msg: request.msg };
+        let payload = json::to_string(&greeting).unwrap();
+        Ok(Response::with((status::Ok, payload)))
+    }
+
+    Iron::new(router).http("localhost:3000").unwrap();
+}
+```
+
+This uses `Router` to control handler dispatch. It builds and still
+responds to `curl http://localhost:3000`, but the handler for the
+`/set` route is yet unimplemented.
+
+Now to read the POST body into a string. The [docs for
+`Request`](http://ironframework.io/doc/iron/request/struct.Request.html)
+say the field `body` is an iterator, so we just need to collect
+that iterator into a string.
+
+I first try `let payload = request.body.read_to_string();` because I
+know it used to work.
+
+It does not work.
+
+```sh
+brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ cargo build
+Compiling httptest v0.1.0 (file:///opt/dev/httptest)
+src/main.rs:30:36: 30:52 error: type `iron::request::Body<'_, '_>` does not implement any method in scope named `read_to_string`
+src/main.rs:30         let payload = request.body.read_to_string();
+                                                  ^~~~~~~~~~~~~~~~
+src/main.rs:30:36: 30:52 help: methods from traits can only be called if the trait is in scope; the following trait is implemented but not in scope, perhaps add a `use` for it:
+src/main.rs:30:36: 30:52 help: candidate #1: use `std::io::Read`
+error: aborting due to previous error
+Could not compile `httptest`.
+
+To learn more, run the command again with --verbose.
+```
+
+I throw my hands up in disgust. 'Why does this method no longer exist?
+The Rust team is always playing tricks on us!' Then I notice the
+compiler has - at some length - explained that the method does exist
+and that I should import `std::io::Read`.
+
+I add the import and discover that `read_to_string` behaves
+differently than I thought.
+
+```sh
+101 brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ cargo build
+Compiling httptest v0.1.0 (file:///opt/dev/httptest)
+src/main.rs:31:36: 31:52 error: this function takes 1 parameter but 0 parameters were supplied [E0061]
+src/main.rs:31         let payload = request.body.read_to_string();
+                                                  ^~~~~~~~~~~~~~~~
+```
+
+Ok, yeah the signature of `Read::read_to_string` is now `fn
+read_to_string(&mut self, buf: &mut String) -> Result<usize, Error>`,
+so that the buffer is supplied and errors handled. Rewrite the
+`set_greeting` method.
+
+```rust
+    // Receive a message by POST and play it back.
+    fn set_greeting(request: &mut Request) -> IronResult<Response> {
+        let mut payload = String::new();
+        request.body.read_to_string(&mut payload).unwrap();
+        let request: Greeting = json::from_str(&payload).unwrap();
+        let greeting = Greeting { msg: request.msg };
+        let payload = json::to_string(&greeting).unwrap();
+        Ok(Response::with((status::Ok, payload)))
+    }
+```
+
+Let's run this and give it a curl.
+
+```sh
+brian@brian-ThinkPad-X1-Carbon-3rd:~⟫ curl -X POST -d '{"msg":"Just trust the Rust"}' http://localhost:3000/set
+{"msg":"Just trust the Rust"}
+```
+
+Oh, Rust. You're just too bad.
 
 
 
