@@ -295,6 +295,130 @@ brian@brian-ThinkPad-X1-Carbon-3rd:~⟫ curl -X POST -d '{"msg":"Just trust the 
 
 Oh, Rust. You're just too bad.
 
+# 4. Mutation
+
+Hey, I know all those `.unwrap()`s are wrong. I don't care. We're prototyping.
+
+Before we continue on to writing a client, I want to do modify this toy example
+to store some state on POST to `/set` and report it later. I'll make `greeting`
+a local, capture it in some closures, then see how the compiler complains.
+
+Here's my new `main` function, before attempting to compile:
+
+```rust
+fn main() {
+    let mut greeting = Greeting { msg: "Hello, World".to_string() };
+
+    let mut router = Router::new();
+
+    router.get("/", |r| hello_world(r, &greeting));
+    router.post("/set", |r| set_greeting(r, &mut greeting));
+
+    fn hello_world(_: &mut Request, greeting: &Greeting) -> IronResult<Response> {
+        let payload = json::to_string(greeting).unwrap();
+        Ok(Response::with((status::Ok, payload)))
+    }
+
+    // Receive a message by POST and play it back.
+    fn set_greeting(request: &mut Request, greeting: &mut Greeting) -> IronResult<Response> {
+        let mut payload = String::new();
+        request.body.read_to_string(&mut payload).unwrap();
+        *greeting = json::from_str(&payload).unwrap();
+        Ok(Response::with(status::Ok))
+    }
+
+    Iron::new(router).http("localhost:3000").unwrap();
+}
+```
+
+```sh
+src/main.rs:24:12: 24:51 error: type mismatch resolving `for<'r,'r,'r> <[closure src/main.rs:24:21: 24:50] as core::ops::FnOnce<(&'r mut iron::request::Request<'r, 'r>,)>>::Output == core::result::Result<iron::response::Response, iron::error::IronError>`:
+ expected bound lifetime parameter ,
+     found concrete lifetime [E0271]
+src/main.rs:24     router.get("/", |r| hello_world(r, &greeting));
+                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/main.rs:25:12: 25:60 error: type mismatch resolving `for<'r,'r,'r> <[closure src/main.rs:25:25: 25:59] as core::ops::FnOnce<(&'r mut iron::request::Request<'r, 'r>,)>>::Output == core::result::Result<iron::response::Response, iron::error::IronError>`:
+ expected bound lifetime parameter ,
+     found concrete lifetime [E0271]
+src/main.rs:25     router.post("/set", |r| set_greeting(r, &mut greeting));
+                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/main.rs:24:12: 24:51 error: type mismatch: the type `[closure src/main.rs:24:21: 24:50]` implements the trait `core::ops::Fn<(&mut iron::request::Request<'_, '_>,)>`, but the trait `for<'r,'r,'r> core::ops::Fn<(&'r mut iron::request::Request<'r, 'r>,)>` is required (expected concrete lifetime, found bound lifetime parameter ) [E0281]
+src/main.rs:24     router.get("/", |r| hello_world(r, &greeting));
+                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/main.rs:25:12: 25:60 error: the trait `for<'r,'r,'r> core::ops::Fn<(&'r mut iron::request::Request<'r, 'r>,)>` is not implemented for the type `[closure src/main.rs:25:25: 25:59]` [E0277]
+src/main.rs:25     router.post("/set", |r| set_greeting(r, &mut greeting));
+                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+error: aborting due to 4 previous errors
+```
+
+rustc is not happy. But I expected that. I'm throwing types at it just to get a response. Tell me what to do rustc.
+
+Those error messages are confusing, but clearly the closure is the wrong type. The `get` and `post` methods of `Router` take a [`Handler`](http://ironframework.io/doc/iron/middleware/trait.Handler.html), and from the doc page I see there's an impl defined as
+
+```
+impl<F> Handler for F where F: Send + Sync + Any + Fn(&mut Request) -> IronResult<Response>
+```
+
+That's a mouthful, but `Handler` is defined for `Fn`, not `FnOnce` or
+`FnMut`, and it has to be `Send + Sync`. Since it needs to be send,
+we're not going to be capturing any references, and since the
+environment isn't mutable we have to use interior mutability to mutate
+the greeting. So I'm going to use a sendable smart pointer, `Arc`, and
+to make it mutable, put a `Mutex` inside it. I'm also going to have to
+move the captures with `move |r| ...` to avoid capturing by reference.
+
+Updating my code like so yields the same error messages.
+
+```
+    let greeting = Arc::new(Mutex::new(Greeting { msg: "Hello, World".to_string() }));
+    let greeting_clone = greeting.clone();
+
+    let mut router = Router::new();
+,
+    router.get("/", move |r| hello_world(r, &greeting.lock().unwrap()));
+    router.post("/set", move |r| set_greeting(r, &mut greeting_clone.lock().unwrap()));
+```
+
+rustc doesn't like the lifetimes of my closure. Why? I don't know. I ask reem
+in #rust if he knows what to do.
+
+Several hours later reem says
+
+```text
+16:02 < reem> brson: Partially hint the type of the request art, rustc has trouble inferring HRTBs
+```
+
+HRTB means 'higher-ranked trait bounds', which means roughly 'complicated lifetimes'.
+
+I change those same lines to hint the type of `r: &mut Request` and everything works...
+
+```rust
+    let greeting = Arc::new(Mutex::new(Greeting { msg: "Hello, World".to_string() }));
+    let greeting_clone = greeting.clone();
+    
+    let mut router = Router::new();
+
+    router.get("/", move |r: &mut Request| hello_world(r, &greeting.lock().unwrap()));
+    router.post("/set", move |r: &mut Request| set_greeting(r, &mut greeting_clone.lock().unwrap()));
+```
+
+It was seemingly a bug in Rust's inferencer. That's lame.
+
+Now it builds again, so we can test with curl.
+
+```sh
+brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ url http://localhost:3000
+{"msg":"Hello, World"}
+brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ curl -X POST -d '{"msg":"Just trust the Rust"}' http://localhost:3000/set
+brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ curl http://localhost:3000
+{"msg":"Just trust the Rust"}
+```
+
+Now we're playing with power.
+
+
+
+
 
 
 
