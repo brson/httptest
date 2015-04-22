@@ -1,15 +1,19 @@
-% Making a web thing
+# Let's make a web service and client in Rust
+
+So I'm working on this project [Crater] for doing [Rust] regression testing. Looking into the feasibility of writing parts in Rust. I need an HTTP server that speaks JSON, along with a corresponding client. I don't see a lot of docs on how to do this so I'm recording my investigation.
+
+I'm going to use [Iron] and [Hyper], neither of which I have experience with.
+
+Each commit in this repo corresponds with a chapter, so follow along if you want.
+
+**Edit: Some inaccuracies within! [Thanks /r/rust!](http://www.reddit.com/r/rust/comments/33k1yn/lets_make_a_web_service_and_client/)**
 
 # 1. Preparing to serve some JSON
-
-So I'm working on this project [Crater] for doing [Rust] regression testing. Looking into the feasibility of writing parts in Rust. I need a HTTP server that talks to PostgreSQL and AMQP and servs JSON, and an HTTP client that talks JSON. I don't see a lot of docs on how to do this so here.
-
-I don't know anything about using [Iron] or [Hyper]. I more-or-less know how to use Cargo.
 
 I start by asking Cargo to give me a new executable project called 'httptest'. Passing `--bin` says
 to create a source file in `src/main.rs` that will be compiled to an application.
 
-```sh
+```text
 $ cargo new httptest --bin
 ```
 
@@ -41,8 +45,8 @@ fn main() {
 
 And type `cargo build`.
 
-```sh
-brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ cargo build
+```text
+$ cargo build
 Compiling hyper v0.3.13
 Compiling iron v0.1.16
 Compiling httptest v0.1.0 (file:///opt/dev/httptest)
@@ -50,26 +54,26 @@ Compiling httptest v0.1.0 (file:///opt/dev/httptest)
 
 Pure success so far. Damn, Rust is smooth. Let's try running the server with `cargo run`.
 
-```sh
-brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ cargo run
+```text
+$ cargo run
 Running `target/debug/httptest`
 ```
 
 I sit here waiting a while expecting it to print "On 3000" but it never does. Cargo
 must be capturing output. Let's see if we're serving something.
 
-```sh
-brian@brian-ThinkPad-X1-Carbon-3rd:~⟫ curl http://localhost:3000
+```text
+$ curl http://localhost:3000
 Hello World!
 ```
 
-Oh, that's super cool. We know how to build a web server now. Good stopping point.
+Oh, that's super cool. We know how to build a web server now. Good starting point.
 
 # 2. Serving a struct as JSON
 
 Is [rustc-serialize] still the easiest way to convert to and from
 JSON? Maybe I should use [serde], but then you really want
-[serd_macros], but that only works on Rust nightlies.  Should I just
+[serde_macros], but that only works on Rust nightlies.  Should I just
 use nightlies? Nobody else is going to need to use this.
 
 Fortune favors the bold. Let's go with serde and nightlies. Now my Cargo.toml
@@ -115,8 +119,8 @@ fn main() {
 
 And then run `cargo build`.
 
-```sh
-brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ cargo build
+```text
+$ cargo build
 Updating registry `https://github.com/rust-lang/crates.io-index`
 Downloading quasi_macros v0.1.9
 Downloading aster v0.2.0
@@ -136,15 +140,17 @@ Compiling httptest v0.1.0 (file:///opt/dev/httptest)
 src/main.rs:20:12: 20:47 error: this function takes 1 parameter but 2 parameters were supplied [E0061]
 src/main.rs:20         Ok(Response::with(status::Ok, payload))
                           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-			  error: aborting due to previous error
-			  Could not compile `httptest`.
+error: aborting due to previous error
+Could not compile `httptest`.
 
 To learn more, run the command again with --verbose.
 ```
 
 Lot's of new dependencies now. But an error. [`Response::with`](http://ironframework.io/doc/iron/response/struct.Response.html#method.with) has this definition:
 
-**fn with<M: Modifier<Response>>(m: M) -> Response**
+```rust
+fn with<M: Modifier<Response>>(m: M) -> Response
+```
 
 I don't know what a `Modifier` is. [Some
 docs](http://ironframework.io/doc/iron/modifiers/index.html) don't
@@ -156,7 +162,7 @@ example passed a tuple to `Response::with` whereas my update treated
 Add the tuple to `Ok(Response::with((status::Ok, payload)))`, execute `cargo run`, curl some JSON.
 
 ```
-brian@brian-ThinkPad-X1-Carbon-3rd:~⟫ curl http://localhost:3000
+$ curl http://localhost:3000
 {"msg":"Hello, World"}
 ```
 
@@ -214,7 +220,7 @@ fn main() {
 
     // Receive a message by POST and play it back.
     fn set_greeting(_: &mut Request) -> IronResult<Response> {
-        let payload = unimplemented!(); // How to I get the POST body as string.
+        let payload = unimplemented!(); // How do I get the POST body as string?
         let request: Greeting = json::from_str(payload).unwrap();
         let greeting = Greeting { msg: request.msg };
         let payload = json::to_string(&greeting).unwrap();
@@ -239,8 +245,8 @@ know it used to work.
 
 It does not work.
 
-```sh
-brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ cargo build
+```text
+$ cargo build
 Compiling httptest v0.1.0 (file:///opt/dev/httptest)
 src/main.rs:30:36: 30:52 error: type `iron::request::Body<'_, '_>` does not implement any method in scope named `read_to_string`
 src/main.rs:30         let payload = request.body.read_to_string();
@@ -261,8 +267,8 @@ and that I should import `std::io::Read`.
 I add the import and discover that `read_to_string` behaves
 differently than I thought.
 
-```sh
-101 brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ cargo build
+```text
+101 $ cargo build
 Compiling httptest v0.1.0 (file:///opt/dev/httptest)
 src/main.rs:31:36: 31:52 error: this function takes 1 parameter but 0 parameters were supplied [E0061]
 src/main.rs:31         let payload = request.body.read_to_string();
@@ -288,8 +294,8 @@ so that the buffer is supplied and errors handled. Rewrite the
 
 Let's run this and give it a curl.
 
-```sh
-brian@brian-ThinkPad-X1-Carbon-3rd:~⟫ curl -X POST -d '{"msg":"Just trust the Rust"}' http://localhost:3000/set
+```text
+$ curl -X POST -d '{"msg":"Just trust the Rust"}' http://localhost:3000/set
 {"msg":"Just trust the Rust"}
 ```
 
@@ -299,7 +305,7 @@ Oh, Rust. You're just too bad.
 
 Hey, I know all those `.unwrap()`s are wrong. I don't care. We're prototyping.
 
-Before we continue on to writing a client, I want to do modify this toy example
+Before we continue on to writing a client, I want to modify this toy example
 to store some state on POST to `/set` and report it later. I'll make `greeting`
 a local, capture it in some closures, then see how the compiler complains.
 
@@ -331,7 +337,7 @@ fn main() {
 }
 ```
 
-```sh
+```text
 src/main.rs:24:12: 24:51 error: type mismatch resolving `for<'r,'r,'r> <[closure src/main.rs:24:21: 24:50] as core::ops::FnOnce<(&'r mut iron::request::Request<'r, 'r>,)>>::Output == core::result::Result<iron::response::Response, iron::error::IronError>`:
  expected bound lifetime parameter ,
      found concrete lifetime [E0271]
@@ -369,12 +375,12 @@ move the captures with `move |r| ...` to avoid capturing by reference.
 
 Updating my code like so yields the same error messages.
 
-```
+```rust
     let greeting = Arc::new(Mutex::new(Greeting { msg: "Hello, World".to_string() }));
     let greeting_clone = greeting.clone();
 
     let mut router = Router::new();
-,
+
     router.get("/", move |r| hello_world(r, &greeting.lock().unwrap()));
     router.post("/set", move |r| set_greeting(r, &mut greeting_clone.lock().unwrap()));
 ```
@@ -406,17 +412,17 @@ It was seemingly a bug in Rust's inferencer. That's lame.
 
 Now it builds again, so we can test with curl.
 
-```sh
-brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ url http://localhost:3000
+```text
+$ url http://localhost:3000
 {"msg":"Hello, World"}
-brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ curl -X POST -d '{"msg":"Just trust the Rust"}' http://localhost:3000/set
-brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ curl http://localhost:3000
+$ curl -X POST -d '{"msg":"Just trust the Rust"}' http://localhost:3000/set
+$ curl http://localhost:3000
 {"msg":"Just trust the Rust"}
 ```
 
 Now we're playing with power.
 
-5. The client
+# 5. The client
 
 We've got a little JSON server going. Now let's write the client. This
 time we're going to use [Hyper] directly.
@@ -453,15 +459,15 @@ fn main() {
 
 But now `cargo run` no longer works.
 
-```sh
-brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ cargo run
+```text
+$ cargo run
 `cargo run` requires that a project only have one executable; use the `--bin` option to specify which one to run
 ```
 
 I must type `cargo run --bin httptest` to start the server. I do so, then `cargo run --bin client` and see
 
 ```text
-brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ cargo run --bin client
+$ cargo run --bin client
 Running `target/debug/client`
 {"msg":"Hello, World"}
 ```
@@ -472,7 +478,7 @@ to
 [`client.post`](http://hyperium.github.io/hyper/hyper/client/struct.Client.html#method.post).
 This returns a
 [`RequestBuilder`](http://hyperium.github.io/hyper/hyper/client/struct.RequestBuilder.html),
-so I'm looking for a builder method that sets the payload. How about [`body`](http://hyperium.github.io/hyper/hyper/client/struct.RequestBuilder.html#method.body).
+so I'm looking for a builder method that sets the payload. How about [`body`](http://hyperium.github.io/hyper/hyper/client/struct.RequestBuilder.html#method.body)?
 
 My new creation:
 
@@ -497,7 +503,7 @@ fn main() {
 But running it is disappointing.
 
 ```text
-101 brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ cargo run --bin client
+101 $ cargo run --bin client
    Compiling httptest v0.1.0 (file:///opt/dev/httptest)
        Running `target/debug/client`
 thread '<main>' panicked at 'called `Result::unwrap()` on an `Err` value: HttpIoError(Error { repr: Custom(Custom { kind: ConnectionAborted, error: StringError("Connection closed") }) })', /home/rustbuild/src/rust-buildbot/slave/nightly-dist-rustc-linux/build/src/libcore/result.rs:750
@@ -509,7 +515,7 @@ To learn more, run the command again with --verbose.
 And simultaneously I see that the server has also errored:
 
 ```text
-brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ cargo run --bin httptest
+$ cargo run --bin httptest
    Running `target/debug/httptest`
 thread '<unnamed>' panicked at 'called `Result::unwrap()` on an `Err` value: SyntaxError("expected value", 1, 1)', /home/rustbuild/src/rust-buildbot/slave/nightly-dist-rustc-linux/build/src/libcore/result.rs:750
 ```
@@ -517,7 +523,7 @@ thread '<unnamed>' panicked at 'called `Result::unwrap()` on an `Err` value: Syn
 It's because of my bad error handling! I didn't pass valid JSON to the `/set` route. Fixing the body to be `.body(r#"{ "msg": "Just trust the Rust" }"#)` lets the client succeed:
 
 ```text
-brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ cargo run --bin client
+$ cargo run --bin client
    Compiling httptest v0.1.0 (file:///opt/dev/httptest)
       Running `target/debug/client`
 {"msg":"Just trust the Rust"}
