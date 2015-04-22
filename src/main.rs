@@ -35,6 +35,7 @@ fn main() {
     fn set_greeting(request: &mut Request, greeting: &mut Greeting) -> IronResult<Response> {
         let mut payload = String::new();
         request.body.read_to_string(&mut payload).unwrap();
+        println!("{}", payload);
         *greeting = json::from_str(&payload).unwrap();
         Ok(Response::with(status::Ok))
     }

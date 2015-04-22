@@ -416,9 +416,114 @@ brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ curl http://localhost:3000
 
 Now we're playing with power.
 
+5. The client
 
+We've got a little JSON server going. Now let's write the client. This
+time we're going to use [Hyper] directly.
 
+I add it to my `Cargo.toml`: `hyper = "*"`, then create `src/bin/client.rs`:
 
+```rust
+extern crate hyper;
+
+fn main() { }
+```
+
+Source files in `src/bin/` are automatically built as executables by cargo. Run `cargo build`
+and the `target/debug/client` program appears. Good, universe is sane. Now figure out Hyper.
+
+Cribbing off the [Hyper client example](http://hyperium.github.io/hyper/hyper/client/index.html) I come
+up with this snippet that just makes a request for "/" and prints the body:
+
+```rust
+extern crate hyper;
+
+use hyper::*;
+use std::io::Read;
+
+fn main() {
+    let mut client = Client::new();
+    let mut res = client.get("http://localhost:3000/").send().unwrap();
+    assert_eq!(res.status, hyper::Ok);
+    let mut s = String::new();
+    res.read_to_string(&mut s).unwrap();
+    println!("{}", s);
+}
+```
+
+But now `cargo run` no longer works.
+
+```sh
+brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ cargo run
+`cargo run` requires that a project only have one executable; use the `--bin` option to specify which one to run
+```
+
+I must type `cargo run --bin httptest` to start the server. I do so, then `cargo run --bin client` and see
+
+```text
+brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ cargo run --bin client
+Running `target/debug/client`
+{"msg":"Hello, World"}
+```
+
+Oh, man, I'm a Rust wizard. One last thing I want to do, make the POST
+request to set the message. Obvious thing to do is change `client.get`
+to
+[`client.post`](http://hyperium.github.io/hyper/hyper/client/struct.Client.html#method.post).
+This returns a
+[`RequestBuilder`](http://hyperium.github.io/hyper/hyper/client/struct.RequestBuilder.html),
+so I'm looking for a builder method that sets the payload. How about [`body`](http://hyperium.github.io/hyper/hyper/client/struct.RequestBuilder.html#method.body).
+
+My new creation:
+
+```rust
+extern crate hyper;
+
+use hyper::*;
+use std::io::Read;
+
+fn main() {
+    let mut client = Client::new();
+    let res = client.post("http://localhost:3000/set").body("Just trust the Rust").send().unwrap();
+    assert_eq!(res.status, hyper::Ok);
+    let mut res = client.get("http://localhost:3000/").send().unwrap();
+    assert_eq!(res.status, hyper::Ok);
+    let mut s = String::new();
+    res.read_to_string(&mut s).unwrap();
+    println!("{}", s);
+}
+```
+
+But running it is disappointing.
+
+```text
+101 brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ cargo run --bin client
+   Compiling httptest v0.1.0 (file:///opt/dev/httptest)
+       Running `target/debug/client`
+thread '<main>' panicked at 'called `Result::unwrap()` on an `Err` value: HttpIoError(Error { repr: Custom(Custom { kind: ConnectionAborted, error: StringError("Connection closed") }) })', /home/rustbuild/src/rust-buildbot/slave/nightly-dist-rustc-linux/build/src/libcore/result.rs:750
+An unknown error occurred
+
+To learn more, run the command again with --verbose.
+```
+
+And simultaneously I see that the server has also errored:
+
+```text
+brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ cargo run --bin httptest
+   Running `target/debug/httptest`
+thread '<unnamed>' panicked at 'called `Result::unwrap()` on an `Err` value: SyntaxError("expected value", 1, 1)', /home/rustbuild/src/rust-buildbot/slave/nightly-dist-rustc-linux/build/src/libcore/result.rs:750
+```
+
+It's because of my bad error handling! I didn't pass valid JSON to the `/set` route. Fixing the body to be `.body(r#"{ "msg": "Just trust the Rust" }"#)` lets the client succeed:
+
+```text
+brian@brian-ThinkPad-X1-Carbon-3rd:~/dev/httptest⟫ cargo run --bin client
+   Compiling httptest v0.1.0 (file:///opt/dev/httptest)
+      Running `target/debug/client`
+{"msg":"Just trust the Rust"}
+```
+
+And just like that we've created a web service and client in Rust. Looks like the future is near. Go build something with [Iron] and [Hyper].
 
 
 
