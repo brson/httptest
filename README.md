@@ -370,8 +370,10 @@ That's a mouthful, but `Handler` is defined for `Fn`, not `FnOnce` or
 we're not going to be capturing any references, and since the
 environment isn't mutable we have to use interior mutability to mutate
 the greeting. So I'm going to use a sendable smart pointer, `Arc`, and
-to make it mutable, put a `Mutex` inside it. I'm also going to have to
-move the captures with `move |r| ...` to avoid capturing by reference.
+to make it mutable, put a `Mutex` inside it. For that we need to import
+both from the standard library like this: `use std::sync::{Mutex, Arc};`.
+I'm also going to have to move the captures with `move |r| ...` to avoid
+capturing by reference.
 
 Updating my code like so yields the same error messages.
 
@@ -401,7 +403,7 @@ I change those same lines to hint the type of `r: &mut Request` and everything w
 ```rust
     let greeting = Arc::new(Mutex::new(Greeting { msg: "Hello, World".to_string() }));
     let greeting_clone = greeting.clone();
-    
+
     let mut router = Router::new();
 
     router.get("/", move |r: &mut Request| hello_world(r, &greeting.lock().unwrap()));
