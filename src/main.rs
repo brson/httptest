@@ -4,11 +4,12 @@
 extern crate iron;
 extern crate router;
 extern crate serde;
+extern crate serde_json;
 
 use iron::prelude::*;
 use iron::status;
 use router::Router;
-use serde::json;
+use serde_json::*;
 use std::io::Read;
 use std::sync::{Arc, Mutex};
 
@@ -20,14 +21,14 @@ struct Greeting {
 fn main() {
     let greeting = Arc::new(Mutex::new(Greeting { msg: "Hello, World".to_string() }));
     let greeting_clone = greeting.clone();
-    
+
     let mut router = Router::new();
 
     router.get("/", move |r: &mut Request| hello_world(r, &greeting.lock().unwrap()));
     router.post("/set", move |r: &mut Request| set_greeting(r, &mut greeting_clone.lock().unwrap()));
-    
+
     fn hello_world(_: &mut Request, greeting: &Greeting) -> IronResult<Response> {
-        let payload = json::to_string(greeting).unwrap();
+        let payload = serde_json::to_string(greeting).unwrap();
         Ok(Response::with((status::Ok, payload)))
     }
 
@@ -36,7 +37,7 @@ fn main() {
         let mut payload = String::new();
         request.body.read_to_string(&mut payload).unwrap();
         println!("{}", payload);
-        *greeting = json::from_str(&payload).unwrap();
+        *greeting = serde_json::from_str(&payload).unwrap();
         Ok(Response::with(status::Ok))
     }
 
