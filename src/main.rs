@@ -1,19 +1,15 @@
-#![feature(custom_derive, plugin)]
-#![plugin(serde_macros)]
-
 extern crate iron;
 extern crate router;
-extern crate serde;
-extern crate serde_json;
+extern crate rustc_serialize;
 
 use iron::prelude::*;
 use iron::status;
 use router::Router;
-use serde_json::*;
+use rustc_serialize::json;
 use std::io::Read;
 use std::sync::{Arc, Mutex};
 
-#[derive(Serialize, Deserialize)]
+#[derive(RustcEncodable, RustcDecodable)]
 struct Greeting {
     msg: String
 }
@@ -28,7 +24,7 @@ fn main() {
     router.post("/set", move |r: &mut Request| set_greeting(r, &mut greeting_clone.lock().unwrap()));
 
     fn hello_world(_: &mut Request, greeting: &Greeting) -> IronResult<Response> {
-        let payload = serde_json::to_string(greeting).unwrap();
+        let payload = json::encode(&greeting).unwrap();
         Ok(Response::with((status::Ok, payload)))
     }
 
@@ -36,8 +32,7 @@ fn main() {
     fn set_greeting(request: &mut Request, greeting: &mut Greeting) -> IronResult<Response> {
         let mut payload = String::new();
         request.body.read_to_string(&mut payload).unwrap();
-        println!("{}", payload);
-        *greeting = serde_json::from_str(&payload).unwrap();
+        *greeting = json::decode(&payload).unwrap();
         Ok(Response::with(status::Ok))
     }
 
