@@ -49,7 +49,7 @@ And type `cargo build`.
 $ cargo build
 Compiling hyper v0.3.13
 Compiling iron v0.1.16
-Compiling httptest v0.1.0 (file:///opt/dev/httptest)
+Compiling httptest v0.2.0 (file:///opt/dev/httptest)
 ```
 
 Pure success so far. Damn, Rust is smooth. Let's try running the server with `cargo run`.
@@ -82,25 +82,21 @@ Fortune favors the bold. Let's go with serde and nightlies. Now my Cargo.toml
 ```toml
 [dependencies]
 iron = "*"
-serde = "*"
-serde_macros = "*"
+rust-serialize = "*"
 ```
 
-Based on the [serde README](https://github.com/erickt/rust-serde) I update `main.rs`
+Based on the [rustc-serialize docs](https://doc.rust-lang.org/rustc-serialize/rustc_serialize/json/index.html) I update `main.rs`
 to look like this:
 
 ```rust
-#![feature(custom_derive, plugin)]
-#![plugin(serde_macros)]
-
 extern crate iron;
-extern crate serde;
+extern crate rustc_serialize;
 
 use iron::prelude::*;
 use iron::status;
-use serde::json;
+use rustc_serialize::json;
 
-#[derive(Serialize, Deserialize)]
+#[derive(RustcEncodable)]
 struct Greeting {
     msg: String
 }
@@ -108,8 +104,8 @@ struct Greeting {
 fn main() {
     fn hello_world(_: &mut Request) -> IronResult<Response> {
         let greeting = Greeting { msg: "Hello, World".to_string() };
-        let payload = json::to_string(&greeting).unwrap();
-        Ok(Response::with(status::Ok, payload))
+        let payload = json::encode(&greeting).unwrap();
+        Ok(Response::with((status::Ok, payload)))
     }
 
     Iron::new(hello_world).http("localhost:3000").unwrap();
@@ -121,25 +117,16 @@ And then run `cargo build`.
 
 ```text
 $ cargo build
-Updating registry `https://github.com/rust-lang/crates.io-index`
-Downloading quasi_macros v0.1.9
-Downloading aster v0.2.0
-Downloading serde_macros v0.3.1
-Downloading num v0.1.22
-Downloading quasi v0.1.9
-Downloading rand v0.3.7
-Downloading serde v0.3.1
-Compiling quasi v0.1.9
-Compiling aster v0.2.0
-Compiling rand v0.3.7
-Compiling num v0.1.22
-Compiling quasi_macros v0.1.9
-Compiling serde v0.3.1
-Compiling serde_macros v0.3.1
-Compiling httptest v0.1.0 (file:///opt/dev/httptest)
-src/main.rs:20:12: 20:47 error: this function takes 1 parameter but 2 parameters were supplied [E0061]
-src/main.rs:20         Ok(Response::with(status::Ok, payload))
+   Updating registry `https://github.com/rust-lang/crates.io-index`
+ Downloading unicase v1.1.1
+ <... more downloading here ...>
+   Compiling lazy_static v0.1.15
+ <... more compiling here ...>
+   Compiling httptest v0.2.0 (file:///opt/dev/httptest)
+src/main.rs:17:12: 17:47 error: this function takes 1 parameter but 2 parameters were supplied [E0061]
+src/main.rs:17         Ok(Response::with(status::Ok, payload))
                           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/main.rs:17:12: 17:47 help: run `rustc --explain E0061` to see a detailed explanation
 error: aborting due to previous error
 Could not compile `httptest`.
 
@@ -189,19 +176,16 @@ and begin writing. The following is what I come up with
 before getting stuck reading the POST data.
 
 ```rust
-#![feature(custom_derive, plugin)]
-#![plugin(serde_macros)]
-
 extern crate iron;
 extern crate router;
-extern crate serde;
+extern crate rustc_serialize;
 
 use iron::prelude::*;
 use iron::status;
 use router::Router;
-use serde::json;
+use rustc_serialize::json;
 
-#[derive(Serialize, Deserialize)]
+#[derive(RustcEncodable, RustcDecodable)]
 struct Greeting {
     msg: String
 }
@@ -214,16 +198,16 @@ fn main() {
 
     fn hello_world(_: &mut Request) -> IronResult<Response> {
         let greeting = Greeting { msg: "Hello, World".to_string() };
-        let payload = json::to_string(&greeting).unwrap();
+        let payload = json::encode(&greeting).unwrap();
         Ok(Response::with((status::Ok, payload)))
     }
 
     // Receive a message by POST and play it back.
-    fn set_greeting(_: &mut Request) -> IronResult<Response> {
-        let payload = unimplemented!(); // How do I get the POST body as string?
-        let request: Greeting = json::from_str(payload).unwrap();
+    fn set_greeting(request: &mut Request) -> IronResult<Response> {
+        let payload = request.body.read_to_string();
+        let request: Greeting = json::decode(payload).unwrap();
         let greeting = Greeting { msg: request.msg };
-        let payload = json::to_string(&greeting).unwrap();
+        let payload = json::encode(&greeting).unwrap();
         Ok(Response::with((status::Ok, payload)))
     }
 
@@ -247,12 +231,12 @@ It does not work.
 
 ```text
 $ cargo build
-Compiling httptest v0.1.0 (file:///opt/dev/httptest)
-src/main.rs:30:36: 30:52 error: type `iron::request::Body<'_, '_>` does not implement any method in scope named `read_to_string`
-src/main.rs:30         let payload = request.body.read_to_string();
+Compiling httptest v0.2.0 (file:///opt/dev/httptest)
+src/main.rs:29:36: 29:52 error: no method named `read_to_string` found for type `iron::request::Body<'_, '_>` in the current scope
+src/main.rs:29         let payload = request.body.read_to_string();
                                                   ^~~~~~~~~~~~~~~~
-src/main.rs:30:36: 30:52 help: methods from traits can only be called if the trait is in scope; the following trait is implemented but not in scope, perhaps add a `use` for it:
-src/main.rs:30:36: 30:52 help: candidate #1: use `std::io::Read`
+src/main.rs:29:36: 29:52 help: items from traits can only be used if the trait is in scope; the following trait is implemented but not in scope, perhaps add a `use` for it:
+src/main.rs:29:36: 29:52 help: candidate #1: use `std::io::Read`
 error: aborting due to previous error
 Could not compile `httptest`.
 
@@ -269,9 +253,9 @@ differently than I thought.
 
 ```text
 101 $ cargo build
-Compiling httptest v0.1.0 (file:///opt/dev/httptest)
-src/main.rs:31:36: 31:52 error: this function takes 1 parameter but 0 parameters were supplied [E0061]
-src/main.rs:31         let payload = request.body.read_to_string();
+Compiling httptest v0.2.0 (file:///opt/dev/httptest)
+src/main.rs:30:36: 30:52 error: this function takes 1 parameter but 0 parameters were supplied [E0061]
+src/main.rs:30         let payload = request.body.read_to_string();
                                                   ^~~~~~~~~~~~~~~~
 ```
 
@@ -285,9 +269,9 @@ so that the buffer is supplied and errors handled. Rewrite the
     fn set_greeting(request: &mut Request) -> IronResult<Response> {
         let mut payload = String::new();
         request.body.read_to_string(&mut payload).unwrap();
-        let request: Greeting = json::from_str(&payload).unwrap();
+        let request: Greeting = json::decode(&payload).unwrap();
         let greeting = Greeting { msg: request.msg };
-        let payload = json::to_string(&greeting).unwrap();
+        let payload = json::encode(&greeting).unwrap();
         Ok(Response::with((status::Ok, payload)))
     }
 ```
@@ -321,7 +305,7 @@ fn main() {
     router.post("/set", |r| set_greeting(r, &mut greeting));
 
     fn hello_world(_: &mut Request, greeting: &Greeting) -> IronResult<Response> {
-        let payload = json::to_string(greeting).unwrap();
+        let payload = json::encode(&greeting).unwrap();
         Ok(Response::with((status::Ok, payload)))
     }
 
@@ -329,7 +313,7 @@ fn main() {
     fn set_greeting(request: &mut Request, greeting: &mut Greeting) -> IronResult<Response> {
         let mut payload = String::new();
         request.body.read_to_string(&mut payload).unwrap();
-        *greeting = json::from_str(&payload).unwrap();
+        *greeting = json::decode(&payload).unwrap();
         Ok(Response::with(status::Ok))
     }
 
@@ -338,31 +322,38 @@ fn main() {
 ```
 
 ```text
-src/main.rs:24:12: 24:51 error: type mismatch resolving `for<'r,'r,'r> <[closure src/main.rs:24:21: 24:50] as core::ops::FnOnce<(&'r mut iron::request::Request<'r, 'r>,)>>::Output == core::result::Result<iron::response::Response, iron::error::IronError>`:
+src/main.rs:21:12: 21:51 error: type mismatch resolving `for<'r, 'r, 'r> <[closure@src/main.rs:21:21: 21:50 greeting:_] as core::ops::FnOnce<(&'r mut iron::request::Request<'r, 'r>,)>>::Output == core::result::Result<iron::response::Response, iron::error::IronError>`:
  expected bound lifetime parameter ,
-     found concrete lifetime [E0271]
-src/main.rs:24     router.get("/", |r| hello_world(r, &greeting));
+    found concrete lifetime [E0271]
+src/main.rs:21     router.get("/", |r| hello_world(r, &greeting));
                           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-src/main.rs:25:12: 25:60 error: type mismatch resolving `for<'r,'r,'r> <[closure src/main.rs:25:25: 25:59] as core::ops::FnOnce<(&'r mut iron::request::Request<'r, 'r>,)>>::Output == core::result::Result<iron::response::Response, iron::error::IronError>`:
+src/main.rs:21:12: 21:51 help: run `rustc --explain E0271` to see a detailed explanation
+src/main.rs:22:12: 22:60 error: type mismatch resolving `for<'r, 'r, 'r> <[closure@src/main.rs:22:25: 22:59 greeting:_] as core::ops::FnOnce<(&'r mut iron::request::Request<'r, 'r>,)>>::Output == core::result::Result<iron::response::Response, iron::error::IronError>`:
  expected bound lifetime parameter ,
-     found concrete lifetime [E0271]
-src/main.rs:25     router.post("/set", |r| set_greeting(r, &mut greeting));
+    found concrete lifetime [E0271]
+src/main.rs:22     router.post("/set", |r| set_greeting(r, &mut greeting));
                           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-src/main.rs:24:12: 24:51 error: type mismatch: the type `[closure src/main.rs:24:21: 24:50]` implements the trait `core::ops::Fn<(&mut iron::request::Request<'_, '_>,)>`, but the trait `for<'r,'r,'r> core::ops::Fn<(&'r mut iron::request::Request<'r, 'r>,)>` is required (expected concrete lifetime, found bound lifetime parameter ) [E0281]
-src/main.rs:24     router.get("/", |r| hello_world(r, &greeting));
+src/main.rs:22:12: 22:60 help: run `rustc --explain E0271` to see a detailed explanation
+src/main.rs:21:12: 21:51 error: type mismatch: the type `[closure@src/main.rs:21:21: 21:50 greeting:&Greeting]` implements the trait `core::ops::Fn<(&mut iron::request::Request<'_, '_>,)>`, but the trait `for<'r, 'r, 'r> core::ops::Fn<(&'r mut iron::request::Request<'r, 'r>,)>` is required (expected concrete lifetime, found bound lifetime parameter ) [E0281]
+src/main.rs:21     router.get("/", |r| hello_world(r, &greeting));
                           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-src/main.rs:25:12: 25:60 error: the trait `for<'r,'r,'r> core::ops::Fn<(&'r mut iron::request::Request<'r, 'r>,)>` is not implemented for the type `[closure src/main.rs:25:25: 25:59]` [E0277]
-src/main.rs:25     router.post("/set", |r| set_greeting(r, &mut greeting));
+src/main.rs:21:12: 21:51 help: run `rustc --explain E0281` to see a detailed explanation
+src/main.rs:22:12: 22:60 error: the trait `for<'r, 'r, 'r> core::ops::Fn<(&'r mut iron::request::Request<'r, 'r>,)>` is not implemented for the type `[closure@src/main.rs:22:25: 22:59 greeting:&mut Greeting]` [E0277]
+src/main.rs:22     router.post("/set", |r| set_greeting(r, &mut greeting));
                           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/main.rs:22:12: 22:60 help: run `rustc --explain E0277` to see a detailed explanation
 error: aborting due to 4 previous errors
+Could not compile `httptest`.
 ```
 
 rustc is not happy. But I expected that. I'm throwing types at it just to get a response. Tell me what to do rustc.
 
 Those error messages are confusing, but clearly the closure is the wrong type. The `get` and `post` methods of `Router` take a [`Handler`](http://ironframework.io/doc/iron/middleware/trait.Handler.html), and from the doc page I see there's an impl defined as
 
-```
-impl<F> Handler for F where F: Send + Sync + Any + Fn(&mut Request) -> IronResult<Response>
+```rust
+pub trait Handler: Send + Sync + Any {
+    fn handle(&self, &mut Request) -> IronResult<Response>;
+}
 ```
 
 That's a mouthful, but `Handler` is defined for `Fn`, not `FnOnce` or
@@ -415,7 +406,7 @@ It was seemingly a bug in Rust's inferencer. That's lame.
 Now it builds again, so we can test with curl.
 
 ```text
-$ url http://localhost:3000
+$ curl http://localhost:3000
 {"msg":"Hello, World"}
 $ curl -X POST -d '{"msg":"Just trust the Rust"}' http://localhost:3000/set
 $ curl http://localhost:3000
@@ -450,7 +441,7 @@ use hyper::*;
 use std::io::Read;
 
 fn main() {
-    let mut client = Client::new();
+    let client = Client::new();
     let mut res = client.get("http://localhost:3000/").send().unwrap();
     assert_eq!(res.status, hyper::Ok);
     let mut s = String::new();
@@ -491,7 +482,7 @@ use hyper::*;
 use std::io::Read;
 
 fn main() {
-    let mut client = Client::new();
+    let client = Client::new();
     let res = client.post("http://localhost:3000/set").body("Just trust the Rust").send().unwrap();
     assert_eq!(res.status, hyper::Ok);
     let mut res = client.get("http://localhost:3000/").send().unwrap();
@@ -506,12 +497,9 @@ But running it is disappointing.
 
 ```text
 101 $ cargo run --bin client
-   Compiling httptest v0.1.0 (file:///opt/dev/httptest)
-       Running `target/debug/client`
-thread '<main>' panicked at 'called `Result::unwrap()` on an `Err` value: HttpIoError(Error { repr: Custom(Custom { kind: ConnectionAborted, error: StringError("Connection closed") }) })', /home/rustbuild/src/rust-buildbot/slave/nightly-dist-rustc-linux/build/src/libcore/result.rs:750
-An unknown error occurred
-
-To learn more, run the command again with --verbose.
+   Compiling httptest v0.2.0 (file:///Users/danieleesposti/workspace/httptest)
+     Running `target/debug/client`
+thread '<main>' panicked at 'assertion failed: `(left == right)` (left: `InternalServerError`, right: `Ok`)', src/bin/client.rs:9
 ```
 
 And simultaneously I see that the server has also errored:
@@ -519,14 +507,14 @@ And simultaneously I see that the server has also errored:
 ```text
 $ cargo run --bin httptest
    Running `target/debug/httptest`
-thread '<unnamed>' panicked at 'called `Result::unwrap()` on an `Err` value: SyntaxError("expected value", 1, 1)', /home/rustbuild/src/rust-buildbot/slave/nightly-dist-rustc-linux/build/src/libcore/result.rs:750
+thread '<unnamed>' panicked at 'called `Result::unwrap()` on an `Err` value: ParseError(SyntaxError("invalid syntax", 1, 1))', src/libcore/result.rs:741
 ```
 
 It's because of my bad error handling! I didn't pass valid JSON to the `/set` route. Fixing the body to be `.body(r#"{ "msg": "Just trust the Rust" }"#)` lets the client succeed:
 
 ```text
 $ cargo run --bin client
-   Compiling httptest v0.1.0 (file:///opt/dev/httptest)
+   Compiling httptest v0.2.0 (file:///opt/dev/httptest)
       Running `target/debug/client`
 {"msg":"Just trust the Rust"}
 ```
