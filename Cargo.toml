@@ -1,12 +1,10 @@
 [package]
 name = "httptest"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Brian Anderson <banderson@mozilla.com>"]
 
 [dependencies]
 iron = "*"
 router = "*"
-serde = "*"
-serde_macros = "*"
-serde_json = "*"
 hyper = "*"
+rustc-serialize = "*"
