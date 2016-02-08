@@ -82,7 +82,7 @@ Fortune favors the bold. Let's go with serde and nightlies. Now my Cargo.toml
 ```toml
 [dependencies]
 iron = "*"
-rust-serialize = "*"
+rustc-serialize = "*"
 ```
 
 Based on the [rustc-serialize docs](https://doc.rust-lang.org/rustc-serialize/rustc_serialize/json/index.html) I update `main.rs`
