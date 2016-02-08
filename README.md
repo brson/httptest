@@ -76,7 +76,7 @@ JSON? Maybe I should use [serde], but then you really want
 [serde_macros], but that only works on Rust nightlies.  Should I just
 use nightlies? Nobody else is going to need to use this.
 
-Fortune favors the bold. Let's go with serde and nightlies. Now my Cargo.toml
+Let's just go with the tried-and-true rustc-serialize. Now my Cargo.toml
 'dependencies' section looks like the following.
 
 ```toml
