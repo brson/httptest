@@ -20,8 +20,13 @@ fn main() {
 
     let mut router = Router::new();
 
-    router.get("/", move |r: &mut Request| hello_world(r, &greeting.lock().unwrap()));
-    router.post("/set", move |r: &mut Request| set_greeting(r, &mut greeting_clone.lock().unwrap()));
+    router.get("/", move |r: &mut Request| {
+        hello_world(r, &greeting.lock().unwrap())
+    }, "get");
+
+    router.post("/set", move |r: &mut Request| {
+        set_greeting(r, &mut greeting_clone.lock().unwrap())
+    }, "set");
 
     fn hello_world(_: &mut Request, greeting: &Greeting) -> IronResult<Response> {
         let payload = json::encode(&greeting).unwrap();
