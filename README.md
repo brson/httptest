@@ -525,7 +525,7 @@ And just like that we've created a web service and client in Rust. Looks like th
 
 [Crater]: https://github.com/brson/taskcluster-crater
 [Rust]: https://github.com/brson/taskcluster-crater
-[Iron]: http://ironframework.io/
+[Iron]: https://github.com/iron/iron
 [Hyper]: http://hyperium.github.io/hyper/hyper/index.html
 [rustc-serialize]: https://crates.io/crates/rustc-serialize
 [serde]: https://crates.io/crates/serde
